@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useRef } from "react";
+import Image from "next/image";
 import { getBcsDetail } from "@/lib/calibration";
 
 type AnalyzeResult = {
@@ -14,18 +15,26 @@ type SlotKey = "right" | "left" | "rear";
 export default function HomePage() {
   const [gender, setGender] = useState<"Jantan" | "Betina">("Jantan");
   const [files, setFiles] = useState<Record<SlotKey, File | null>>({
-    right: null, left: null, rear: null,
+    right: null,
+    left: null,
+    rear: null,
   });
   const [previews, setPreviews] = useState<Record<SlotKey, string>>({
-    right: "", left: "", rear: "",
+    right: "",
+    left: "",
+    rear: "",
   });
   const [dragOver, setDragOver] = useState<Record<SlotKey, boolean>>({
-    right: false, left: false, rear: false,
+    right: false,
+    left: false,
+    rear: false,
   });
 
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
-  const [result, setResult] = useState<(AnalyzeResult & { kategori?: string; rekomendasi?: string }) | null>(null);
+  const [result, setResult] = useState<
+    (AnalyzeResult & { kategori?: string; rekomendasi?: string }) | null
+  >(null);
 
   const inputRefs = {
     right: useRef<HTMLInputElement>(null),
@@ -40,8 +49,14 @@ export default function HomePage() {
 
   function handleFile(slot: SlotKey, file: File | null) {
     if (!file) return;
-    if (!file.type.startsWith("image/")) { setStatus("File harus gambar (JPEG/PNG)."); return; }
-    if (file.size > 6 * 1024 * 1024)     { setStatus("Ukuran gambar maksimal 6MB per foto."); return; }
+    if (!file.type.startsWith("image/")) {
+      setStatus("File harus gambar (JPEG/PNG).");
+      return;
+    }
+    if (file.size > 6 * 1024 * 1024) {
+      setStatus("Ukuran gambar maksimal 6MB per foto.");
+      return;
+    }
     setFiles((s) => ({ ...s, [slot]: file }));
     setPreviews((s) => ({ ...s, [slot]: URL.createObjectURL(file) }));
     setStatus("");
@@ -63,13 +78,16 @@ export default function HomePage() {
 
   async function handleAnalyze(e: React.FormEvent) {
     e.preventDefault();
-    setResult(null); setStatus("");
+    setResult(null);
+    setStatus("");
 
     if (!files.right || !files.left || !files.rear) {
-      setStatus("Lengkapi tiga foto: kanan, kiri, belakang."); return;
+      setStatus("Lengkapi tiga foto: kanan, kiri, belakang.");
+      return;
     }
 
-    setLoading(true); setStatus("Menganalisis...");
+    setLoading(true);
+    setStatus("Menganalisis...");
 
     try {
       const fd = new FormData();
@@ -79,11 +97,21 @@ export default function HomePage() {
       fd.append("rear", files.rear);
 
       const res = await fetch("/api/analyze", { method: "POST", body: fd });
-      const data: any = await res.json();
-      if (!res.ok || data?.error) throw new Error(data?.error || "Analisis gagal.");
+
+      // Hindari `any`
+      type AnalyzeAPI = AnalyzeResult & Partial<{ error: string }>;
+      const data = (await res.json()) as AnalyzeAPI;
+
+      if (!res.ok || data.error) {
+        throw new Error(data?.error || "Analisis gagal.");
+      }
 
       const detail = getBcsDetail(Number(data.skor_bcs));
-      const withCalib = { ...data, kategori: detail.kategori, rekomendasi: detail.rekomendasi };
+      const withCalib = {
+        ...data,
+        kategori: detail.kategori,
+        rekomendasi: detail.rekomendasi,
+      };
       setResult(withCalib);
       setStatus("Selesai ✔");
     } catch (err: unknown) {
@@ -101,12 +129,21 @@ export default function HomePage() {
       onDragLeave={onDragLeave(slot)}
       className={[
         "cursor-pointer border-2 border-dashed rounded-2xl p-3 min-h-[220px] transition",
-        dragOver[slot] ? "border-emerald-400 bg-white/10" : "border-white/30 bg-white/5"
+        dragOver[slot] ? "border-emerald-400 bg-white/10" : "border-white/30 bg-white/5",
       ].join(" ")}
     >
       <div className="text-sm font-medium mb-2 text-amber-50">{label}</div>
       {previews[slot] ? (
-        <img src={previews[slot]} className="w-full h-40 object-cover rounded-xl" alt={label} />
+        <div className="relative w-full h-40 rounded-xl overflow-hidden">
+          <Image
+            src={previews[slot]}
+            alt={label}
+            fill
+            unoptimized
+            className="object-cover"
+            sizes="(max-width: 768px) 100vw, 33vw"
+          />
+        </div>
       ) : (
         <div className="text-xs text-amber-100/80 h-40 flex items-center justify-center rounded-xl bg-white/10">
           Klik untuk pilih / drag & drop
@@ -135,8 +172,8 @@ export default function HomePage() {
           <form onSubmit={handleAnalyze} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Slot slot="right" label="Foto Sisi Kanan" />
-              <Slot slot="left"  label="Foto Sisi Kiri" />
-              <Slot slot="rear"  label="Foto Bagian Belakang" />
+              <Slot slot="left" label="Foto Sisi Kiri" />
+              <Slot slot="rear" label="Foto Bagian Belakang" />
             </div>
 
             <div className="flex items-center gap-3">
@@ -146,8 +183,12 @@ export default function HomePage() {
                 onChange={(e) => setGender(e.target.value as "Jantan" | "Betina")}
                 className="border border-white/30 bg-white/10 text-amber-50 rounded-xl px-3 py-2 text-sm"
               >
-                <option className="text-gray-900" value="Jantan">Jantan</option>
-                <option className="text-gray-900" value="Betina">Betina</option>
+                <option className="text-gray-900" value="Jantan">
+                  Jantan
+                </option>
+                <option className="text-gray-900" value="Betina">
+                  Betina
+                </option>
               </select>
             </div>
 
@@ -189,9 +230,7 @@ export default function HomePage() {
         </section>
       </div>
 
-      <footer className="py-6 text-center text-xs text-amber-100/80">
-        Dibuat oleh Dimas
-      </footer>
+      <footer className="py-6 text-center text-xs text-amber-100/80">Dibuat oleh Dimas</footer>
     </main>
   );
 }
