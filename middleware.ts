@@ -6,15 +6,15 @@ const PUBLIC_PATHS = [
   "/favicon.ico",
   "/robots.txt",
   "/sitemap.xml",
-  "/_next",       // assets Next.js
-  "/assets",      // kalau nanti ada
+  "/_next",
+  "/assets",
 ];
 
 export function middleware(req: NextRequest) {
   const url = req.nextUrl;
   const path = url.pathname;
 
-  // Jika APP_PASSWORD kosong/tidak disetel → proteksi dinonaktifkan otomatis
+  // Jika APP_PASSWORD kosong → proteksi nonaktif
   const appPassword = process.env.APP_PASSWORD;
   if (!appPassword || appPassword.trim() === "") {
     return NextResponse.next();
@@ -38,5 +38,5 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image).*)"], // lindungi semua kecuali asset next
+  matcher: ["/((?!_next/static|_next/image).*)"],
 };

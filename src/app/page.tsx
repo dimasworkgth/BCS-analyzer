@@ -1,103 +1,197 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+import React, { useState, useRef } from "react";
+import { getBcsDetail } from "@/lib/calibration";
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+type AnalyzeResult = {
+  skor_bcs: number;
+  analisis_singkat: string;
+  tingkat_keyakinan: "Tinggi" | "Sedang" | "Rendah" | string;
+};
+
+type SlotKey = "right" | "left" | "rear";
+
+export default function HomePage() {
+  const [gender, setGender] = useState<"Jantan" | "Betina">("Jantan");
+  const [files, setFiles] = useState<Record<SlotKey, File | null>>({
+    right: null, left: null, rear: null,
+  });
+  const [previews, setPreviews] = useState<Record<SlotKey, string>>({
+    right: "", left: "", rear: "",
+  });
+  const [dragOver, setDragOver] = useState<Record<SlotKey, boolean>>({
+    right: false, left: false, rear: false,
+  });
+
+  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState("");
+  const [result, setResult] = useState<(AnalyzeResult & { kategori?: string; rekomendasi?: string }) | null>(null);
+
+  const inputRefs = {
+    right: useRef<HTMLInputElement>(null),
+    left: useRef<HTMLInputElement>(null),
+    rear: useRef<HTMLInputElement>(null),
+  };
+
+  const onPick = (slot: SlotKey) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    handleFile(slot, file);
+  };
+
+  function handleFile(slot: SlotKey, file: File | null) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { setStatus("File harus gambar (JPEG/PNG)."); return; }
+    if (file.size > 6 * 1024 * 1024)     { setStatus("Ukuran gambar maksimal 6MB per foto."); return; }
+    setFiles((s) => ({ ...s, [slot]: file }));
+    setPreviews((s) => ({ ...s, [slot]: URL.createObjectURL(file) }));
+    setStatus("");
+  }
+
+  const onDrop = (slot: SlotKey) => (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragOver((s) => ({ ...s, [slot]: false }));
+    const file = e.dataTransfer.files?.[0] || null;
+    handleFile(slot, file);
+  };
+  const onDragOver = (slot: SlotKey) => (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragOver((s) => ({ ...s, [slot]: true }));
+  };
+  const onDragLeave = (slot: SlotKey) => () => {
+    setDragOver((s) => ({ ...s, [slot]: false }));
+  };
+
+  async function handleAnalyze(e: React.FormEvent) {
+    e.preventDefault();
+    setResult(null); setStatus("");
+
+    if (!files.right || !files.left || !files.rear) {
+      setStatus("Lengkapi tiga foto: kanan, kiri, belakang."); return;
+    }
+
+    setLoading(true); setStatus("Menganalisis...");
+
+    try {
+      const fd = new FormData();
+      fd.append("gender", gender);
+      fd.append("right", files.right);
+      fd.append("left", files.left);
+      fd.append("rear", files.rear);
+
+      const res = await fetch("/api/analyze", { method: "POST", body: fd });
+      const data: any = await res.json();
+      if (!res.ok || data?.error) throw new Error(data?.error || "Analisis gagal.");
+
+      const detail = getBcsDetail(Number(data.skor_bcs));
+      const withCalib = { ...data, kategori: detail.kategori, rekomendasi: detail.rekomendasi };
+      setResult(withCalib);
+      setStatus("Selesai ✔");
+    } catch (err: unknown) {
+      setStatus(err instanceof Error ? err.message : "Terjadi kesalahan.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const Slot = ({ slot, label }: { slot: SlotKey; label: string }) => (
+    <div
+      onClick={() => inputRefs[slot].current?.click()}
+      onDrop={onDrop(slot)}
+      onDragOver={onDragOver(slot)}
+      onDragLeave={onDragLeave(slot)}
+      className={[
+        "cursor-pointer border-2 border-dashed rounded-2xl p-3 min-h-[220px] transition",
+        dragOver[slot] ? "border-emerald-400 bg-white/10" : "border-white/30 bg-white/5"
+      ].join(" ")}
+    >
+      <div className="text-sm font-medium mb-2 text-amber-50">{label}</div>
+      {previews[slot] ? (
+        <img src={previews[slot]} className="w-full h-40 object-cover rounded-xl" alt={label} />
+      ) : (
+        <div className="text-xs text-amber-100/80 h-40 flex items-center justify-center rounded-xl bg-white/10">
+          Klik untuk pilih / drag & drop
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      )}
+      <input
+        ref={inputRefs[slot]}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={onPick(slot)}
+      />
     </div>
+  );
+
+  return (
+    <main className="min-h-screen bg-gradient-to-br from-green-950 via-emerald-900 to-amber-900">
+      <header className="max-w-6xl mx-auto px-4 py-6 flex items-center justify-between">
+        <h1 className="text-2xl md:text-3xl font-semibold text-amber-50">BCS Sapi Analis</h1>
+        <span className="text-xs text-amber-100/80">Mode Beta</span>
+      </header>
+
+      <div className="max-w-6xl mx-auto px-4 pb-10 grid grid-cols-1 md:grid-cols-2 gap-8">
+        {/* Kolom Kiri: Form */}
+        <section className="space-y-6">
+          <form onSubmit={handleAnalyze} className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Slot slot="right" label="Foto Sisi Kanan" />
+              <Slot slot="left"  label="Foto Sisi Kiri" />
+              <Slot slot="rear"  label="Foto Bagian Belakang" />
+            </div>
+
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-amber-50">Jenis Kelamin:</span>
+              <select
+                value={gender}
+                onChange={(e) => setGender(e.target.value as "Jantan" | "Betina")}
+                className="border border-white/30 bg-white/10 text-amber-50 rounded-xl px-3 py-2 text-sm"
+              >
+                <option className="text-gray-900" value="Jantan">Jantan</option>
+                <option className="text-gray-900" value="Betina">Betina</option>
+              </select>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="px-5 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-white font-medium disabled:opacity-60"
+            >
+              {loading ? "Menganalisis..." : "Analisis Sekarang"}
+            </button>
+
+            {status && <div className="text-sm text-amber-100/90">{status}</div>}
+          </form>
+        </section>
+
+        {/* Kolom Kanan: Hasil */}
+        <section className="rounded-2xl p-5 min-h-[360px] bg-white/10 border border-white/20">
+          {!result ? (
+            <div className="text-amber-100/80">
+              Unggah 3 foto + pilih jenis kelamin. Lalu klik <b>Analisis Sekarang</b>.
+            </div>
+          ) : (
+            <div className="space-y-3 text-amber-50">
+              <div className="text-sm uppercase tracking-wide text-amber-200/90">
+                Tingkat Keyakinan: <b>{result.tingkat_keyakinan}</b>
+              </div>
+              <div className="text-5xl font-bold text-white">{result.skor_bcs}</div>
+              <p className="text-amber-100/90">{result.analisis_singkat}</p>
+
+              {result.kategori && (
+                <div className="mt-3 p-4 rounded-xl bg-emerald-50/90 border border-emerald-200 text-gray-900">
+                  <div className="text-sm text-gray-600">Kategori</div>
+                  <div className="text-lg font-semibold">{result.kategori}</div>
+                  <div className="mt-1 text-gray-700">{result.rekomendasi}</div>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      </div>
+
+      <footer className="py-6 text-center text-xs text-amber-100/80">
+        Dibuat oleh Dimas
+      </footer>
+    </main>
   );
 }
