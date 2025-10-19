@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars */
+import { Buffer } from "buffer";
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
@@ -5,8 +7,6 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // ---- MASTER PROMPT (berbasis panduan ilmiah BCS 1–9 untuk sapi potong) ----
-// Sumber acuan: area penilaian & skala 1–9 pada beef cattle (back/spine, ribs, hooks, pins, tailhead, brisket). 
-// (UNL, OSU, Montana State, Missouri Extension) :contentReference[oaicite:10]{index=10}
 function buildMasterPrompt(gender: string) {
   return `
 Anda adalah model vision yang menilai Body Condition Score (BCS) sapi potong pada skala 1–9, berbasis TIGA foto: sisi kanan, sisi kiri, dan bagian belakang. Jenis kelamin sapi: ${gender}.
@@ -69,7 +69,6 @@ export async function POST(req: NextRequest) {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    // Model vision terkini & cepat untuk image understanding
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
     const result = await model.generateContent({
@@ -81,6 +80,7 @@ export async function POST(req: NextRequest) {
       (result as any)?.response?.candidates?.[0]?.content?.parts?.[0]?.text ||
       "";
 
+    // Paksa JSON valid
     let json: any;
     try {
       json = JSON.parse(text);
@@ -95,11 +95,13 @@ export async function POST(req: NextRequest) {
       analisis_singkat: String(json.analisis_singkat || ""),
       tingkat_keyakinan: String(json.tingkat_keyakinan || "Sedang"),
     };
+
     if (Number.isNaN(out.skor_bcs)) throw new Error("Nilai skor_bcs tidak valid.");
 
     return NextResponse.json(out, { status: 200 });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error(err);
-    return NextResponse.json({ error: err?.message || "Terjadi kesalahan." }, { status: 400 });
+    const msg = err instanceof Error ? err.message : "Terjadi kesalahan.";
+    return NextResponse.json({ error: msg }, { status: 400 });
   }
 }
